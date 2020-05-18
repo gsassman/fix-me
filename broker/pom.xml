@@ -9,10 +9,11 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>market</artifactId>
+    <artifactId>broker</artifactId>
     <packaging>jar</packaging>
 
-    <build>
+
+     <build>
         <plugins>
             <plugin>
                 <!-- Build an executable JAR -->
@@ -24,7 +25,7 @@
                         <manifest>
                             <addClasspath>true</addClasspath>
                             <classpathPrefix>lib/</classpathPrefix>
-                            <mainClass>market.Market</mainClass>
+                            <mainClass>broker.Broker</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
@@ -43,7 +44,7 @@
                     <archive>
                         <manifest>
                             <addClasspath>true</addClasspath>
-                            <mainClass>market.Market</mainClass>
+                            <mainClass>broker.Broker</mainClass>
                         </manifest>
                     </archive>
                     <descriptorRefs>

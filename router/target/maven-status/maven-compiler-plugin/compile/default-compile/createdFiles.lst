@@ -1,3 +1,4 @@
 router/Server.class
 router/Handler.class
 router/Router.class
+router/Component.class
