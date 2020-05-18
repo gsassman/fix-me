@@ -22,7 +22,7 @@ public class Market
 
 	public static void ShowInstruments()
 	{
-		System.out.println("Available instruments")
+		System.out.println("Available instruments");
 		for(int i = 0; i < instruments.length; i++)
 		{
 			System.out.println("index"+ i + " : [ "+ instruments[i] + " ]");
