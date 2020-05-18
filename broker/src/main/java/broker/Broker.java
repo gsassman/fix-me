@@ -21,8 +21,8 @@ public class Broker
 	protected SocketChannel client;
 	protected ArrayList<String> messages = new ArrayList<>();
 	public static String ID ="";
-	public static final String[] brokerStockItems = { "Spark Plug", "Air Filter", "Oil Filter", "Fuel Filter", "Engine Oil" };  
-	public static final int[] brokerStockQuantity = { 0, 0, 0, 0, 0 };
+	public static final String[] brokerStockItems = { "A", "B", "c", "D", "E", "F" };  
+	public static final int[] brokerStockQuantity = { 0, 0, 0, 0, 0, 0 };
 	
 	public static int orderID = 0;
 	
