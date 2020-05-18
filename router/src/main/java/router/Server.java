@@ -86,7 +86,7 @@ public class Server extends Thread {
 			{
 				socketChannel = serverSocketChannel.accept();
 				socketHandlerAsync = new Handler(socketChannel, this._componentList.size(), 
-					_messages, this._port, this._componentId, this._component);
+					_messages, this._port, this._componentId, this._component.toString());
 				
 				System.out.println(String.format("%s connected, Id: %s", this._component.toString(), this._componentId));
 				
