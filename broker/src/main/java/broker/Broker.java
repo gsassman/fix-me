@@ -8,297 +8,193 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.Set;
+import java.util.zip.CRC32;
 public class Broker
 {
-	private static final String localhost = "127.0.0.1";
-	private static final int port = 5000;
     private static BufferedReader bufferedReader = null;
-	protected SocketChannel client;
-	protected ArrayList<String> messages = new ArrayList<>();
-	public static String ID ="";
-	public static final String[] brokerStockItems = { "A", "B", "c", "D", "E", "F" };  
-	public static final int[] brokerStockQuantity = { 0, 0, 0, 0, 0, 0 };
-	
-	public static int orderID = 0;
-	
+    private static ByteBuffer byteBuffer = null;
+    protected SocketChannel client;
+    protected ArrayList<String> messages = new ArrayList<>();
+    public static final String host = "127.0.0.1";
+    public static final int port = 5000;
+
+    public static String ID = "";
+    public static int targetID = 0;
+
+    private static int time = 10;
+    public static int choice = 1;
+
     public static void main(String[] args) throws Exception {
-		
+
+        // selects between channels
         Selector selector = Selector.open();
+        // create new channel for this connection
         SocketChannel socketChannel = SocketChannel.open();
+        // set channel to be non-blocking
         socketChannel.configureBlocking(false);
-        socketChannel.connect(new InetSocketAddress(localhost, port));
-        socketChannel.register(selector, SelectionKey.OP_CONNECT |
-                SelectionKey.OP_READ | SelectionKey.
-                OP_WRITE);
-        bufferedReader = new BufferedReader(new
-                InputStreamReader(System.in));
+        // associate newly created channel to the server on the router
+        socketChannel.connect(new InetSocketAddress(host, port));
+        // register this channel with the selector and specify the operations this
+        // channel should be associated with
+        socketChannel.register(selector, SelectionKey.OP_CONNECT | SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+        // initialise a reader for user input
+        bufferedReader = new BufferedReader(new InputStreamReader(System.in));
+
+        // loop broker options until connection is closed
         while (true) {
+            // get keys representing channels ready for IO
             if (selector.select() > 0) {
-                if (processSet(selector.selectedKeys())) {
+                // if a channel ready for IO exists, set iterator for keys
+                Iterator i = selector.selectedKeys().iterator();
+                // define selection key to hold selected key from selectedKeys
+                SelectionKey key = null;
+
+                // romove excess keys from list
+                while (i.hasNext()) {
+                    key = (SelectionKey) i.next();
+                    i.remove();
+                }
+
+                // process key, if connection failed/ended exit
+                if (processKey(key)) {
                     break;
                 }
             }
         }
+        // once connection is closed, close this channel
         socketChannel.close();
     }
 
-public static String setFix(int price, int quantity, int side)
-{
-		
-	ZonedDateTime now= ZonedDateTime.now(ZoneOffset.UTC);
-
-	String fixedBody = "|35=D|49="+ID+"|56=100001|52="+now+"|54="+side+"|38="+quantity+"|44="+price;
-	int bodylength = fixedBody.getBytes().length;
-	
-	String fixedHeader = "8=FIX.4.4|9="+bodylength+"|11="+orderID;
-	String fixedTrailer = "|10="+getChecksum(ByteBuffer.wrap(fixedBody.getBytes()), bodylength)+"|";
-	String brokerMessage = fixedHeader + fixedBody + fixedTrailer;
-
-	return (brokerMessage);
-
-}
-
-	public static String getChecksum(ByteBuffer a, int b)
-	{
-		int checksum = 0;
-			for (int i = 0; i < b; i++) {
-				checksum += a.get(i);
-			}
-			checksum = checksum%256;
-			if(checksum < 10)
-			{
-				return "00"+checksum;
-			}
-			else if(checksum < 100)
-			{
-				return "0"+checksum;
-			}
-			else
-			{
-				return checksum % 256+"";
-			}
-	}
-	
-	public static Boolean processSet(Set readySet)
-            throws Exception {
-        SelectionKey key = null;
-        Iterator iterator = null;
-        iterator = readySet.iterator();
-        while (iterator.hasNext()) {
-            key = (SelectionKey) iterator.next();
-            iterator.remove();
-        }
+    public static Boolean processKey(SelectionKey key) throws Exception {
+        // if not connected already, finish connection
         if (key.isConnectable()) {
-            Boolean connected = processConnect(key);
-            if (!connected) {
+            // if connection failed/ended exit
+            if (!processConnection(key)) {
                 return true;
             }
         }
-        if (key.isReadable()) 
-		{
-            SocketChannel socketChannel = (SocketChannel) key.channel();
-            ByteBuffer byteBuffer = ByteBuffer.allocate(1024);
-            socketChannel.read(byteBuffer);
-            String result = new String(byteBuffer.array()).trim();
-           if(ID.isEmpty())
-			{
-				ID = result;
-				System.out.println(" ID: " +ID);
-				brokerOptions(socketChannel,byteBuffer );	
-			}
-			else
-			{
-				 System.out.println(" Server: " + result);
-				updatebrokerStock(result);
-			}
-			brokerOptions(socketChannel,byteBuffer );
-			
-        }    
+
+        // once connected, test if this channel is ready for reading
+        if (key.isReadable()) {
+            // if key is readable, carry out operations
+            readableKey(key);
+        }   
+        // return false to loop through next key set
         return false;
     }
-	
-	public static void updatebrokerStock(String input)
-	{
-		String[] arr = input.split(" ");
-		String[] array = arr[1].split("\\|");
-		String quantity = array[11].split("=")[1];
-		String buyOrSell = array[9].split("=")[1];
-		int varb = 0;
-	    varb = Integer.parseInt(quantity);
-		int var = 0;
-		var = Integer.parseInt(array[2].split("=")[1]);
-		if(arr[0].equals("accepted"))
-		{
-			brokerStockItems[var] = brokerStockItems[var] + varb;
-		}
-	}
-	
-	public static void brokerOptions(SocketChannel socketChannel, ByteBuffer byteBuffer )
-	{
-		  try{
 
-			String input = "";
-			int quantity = 0;
-			int price = 0;
-			String item = "";
-			int i_input = 0;
-			int side = 1;
+    public static void readableKey(SelectionKey key) throws IOException {
+        // get channel associated with this key
+        SocketChannel socketChannel = (SocketChannel) key.channel();
+        // initialise buffer to read from channel
+        byteBuffer = ByteBuffer.allocate(1024);
 
-			//
-			while(true)
-			{
-				System.out.println(" Broker options: 0 = Exit, 1 = Buy, 2 = Sell ");
-				input = bufferedReader.readLine();
+        // very first message is the ID sent by router
+        socketChannel.read(byteBuffer);
+        String routerOutput = new String(byteBuffer.array()).trim();
 
-				if (input.equalsIgnoreCase("0")) {
-					System.exit(0);
-				} 
-				else if (input.equalsIgnoreCase("1") || input.equalsIgnoreCase("2"))
-				{
-					side = Integer.parseInt(input);
-					break;
-				} else {
-					System.out.println(" invalid ");
-				}
-			
+        // if ID is not set, then this is the first message received ie.:ID
+        if(ID.isEmpty()) {
+            ID = routerOutput;
+            System.out.println(" Broker ID: " + routerOutput);
+            Menu(socketChannel);
+        } 
+        else {
+            // any message after ID is set is sale related
+            System.out.println(" Server response: " + routerOutput);
+            // update time
+            setTime(routerOutput);
+        }
+        Menu(socketChannel);
+    }
 
-			// print stock
-			for (int i = 0; i < brokerStockItems.length; i++) {
-				System.out.println(" Item : " + brokerStockItems[i]);
-			}
-
-			// get item
-			// while (true) {
-			// 	System.out.println(" item: 1 - 5");
-
-			// 	input = bufferedReader.readLine();
-			// 	while (isDigit(input) == false) {
-			// 		System.out.println(" invalid, 1 - 5");
-			// 		input = bufferedReader.readLine();
-			// 	}
-			// }
-			i_input = Integer.parseInt(input);
-			item =  brokerStockItems[i_input];
-			
-			// get itemIndex
-			int itemIndex = 0;
-			for(int i = 0; i< brokerStockItems.length;i++)
-			{
-				if(item.equals(brokerStockItems[i]))
-				{
-					itemIndex = i;
-					break;
-				}
-			}
-			
-			orderID = itemIndex;
-			// get quantity requested
-			while(true)
-			{
-				System.out.println(" Stock amount 1 - 5 ");
-				input = bufferedReader.readLine();
-
-				if ( isDigit(input) == true ) {
-					i_input = Integer.parseInt(input); 
-					if (i_input > 0 && i_input < 6) {
-						quantity = i_input;
-						break;
-					} else {
-						System.out.println(" invalid, enter 1 - 5 ");
-					}
-				}
-			}
-	
-			if(side == 2){
-
-				int available = brokerStockQuantity[itemIndex];
-				while(true)
-				{
-					System.out.println(" Stock amount 1 - 5 ");
-					input = bufferedReader.readLine();
-	
-					if ( isDigit(input) == true ) {
-						i_input = Integer.parseInt(input); 
-						if (i_input > 0 && i_input < 6) {
-							quantity = i_input;
-							break;
-						} else {
-							System.out.println(" invalid, enter 1 - 5 ");
-						}
-					}
-
-					if(quantity < available){
-						break;
-					}
-					System.out.println(" insufficient stock ");
-				}
-			}	
-
-			// get price
-			while(true)
-			{
-				System.out.println(" price: 1 - 10000 ");
-				input = bufferedReader.readLine();
-
-				if ( isDigit(input) == true ) {
-
-					i_input = Integer.parseInt(input); 
-					if (i_input > 0 && i_input < 10000) {
-						price = i_input;
-						break;
-					}
-				}
-
-				if (price > 0) {
-					break;
-				} else {
-					System.out.println(" invalid ");
-				}
-				
-			}
-			
-			if(side == 1)
-			{
-				input = item+"#"+setFix(price, quantity,1);
-			}
-			else
-			{
-				input = item+"#"+setFix(price, quantity,2);
-			}	
-            byteBuffer = ByteBuffer.wrap(input.getBytes());
-            socketChannel.write(byteBuffer);
-		  }	
-		}
-		catch(IOException e)
-		{
-		System.out.println(" error ");
-		}		
-	}
-
-	public static Boolean processConnect(SelectionKey key) {
-		SocketChannel socketChannel = (SocketChannel) key.channel();
-		try {
-			while (socketChannel.isConnectionPending()) {
-				socketChannel.finishConnect();
-			}
-		} catch (IOException e) {
-			key.cancel();
-			return false;
-		}
-		return true;
-	}
-
-	public static boolean isDigit(String input) {
+    // continually try to finish this channels connection
+    public static Boolean processConnection(SelectionKey key) {
+        // get channel associated with this key
+        SocketChannel socketChannel = (SocketChannel) key.channel();
         try {
-            int i = Integer.parseInt(input);
-            return true;
-        } catch (Exception e) {
+            // try to finnish connection 
+            while (socketChannel.isConnectionPending()) {
+                socketChannel.finishConnect();
+            }
+        } catch (IOException e) {
+            // deregister this key from selector
+            key.cancel();
             return false;
         }
+        return true;
     }
+
+    // get user choice and write fixed choice to channels output stream (server that lives on the router) 
+    public static void Menu(SocketChannel socketChannel)
+	{
+        while (true) {
+            try{
+                System.out.println(" Would you like to buy or sell 1 unit of time? \n Enter : 1 to buy or 2 to sell ");
+                // get choice
+                String input = bufferedReader.readLine();
+                
+                if (input.equalsIgnoreCase("1") || (input.equalsIgnoreCase("2") && time > 0)) {
+                    // set string as fix like notation
+                    input = setFix(input);
+                    // wrap input's byte array and write to channel's output stream
+                    socketChannel.write(ByteBuffer.wrap(input.getBytes()));
+                    return;
+                } else if (input.equalsIgnoreCase("2") && time <= 0) {
+                    System.out.println(" Nothing to sell ");
+                } else {
+                    System.out.println(" invalid input ");
+                }
+            
+            } catch (IOException e){
+                System.out.println("IO Exception caught: " + e);
+            }	
+        }
+	}
+    
+    // set string in fix like notation
+    public static String setFix(String choice) {
+        // ID = broker ID, targetID = market ID, choice = buy/sell
+        String fixed = ID+"|"+targetID+"|"+choice+"|"+Checksum(choice)+"|";
+        return (fixed);
+    }
+
+    // get checksum to attach to message
+    public static long Checksum(String fixedBody) {
+        // get byte array of string to be encoded
+        byte[] bytes = fixedBody.getBytes();
+        // initialise new crc32 object
+        CRC32 crc32 = new CRC32();
+        // update the new crc32 object with the string's array
+        // starting at the first element and ending at its last
+        crc32.update(bytes, 0, bytes.length);
+        // return checksum value
+        return crc32.getValue();
+	}
+    
+    // update time after sale or purchase
+    public static void setTime(String routerOutput){
+
+        // split message to validate order status
+        String[] routerOutputSplit = routerOutput.split("\\|");
+        
+        // if order succeful update time
+		if(routerOutputSplit[0].equals("accepted")){
+            if (routerOutputSplit[3].equals("1")){
+                // if order way buy, increase time by one unit
+                time++;
+                System.out.println("time: "+time);
+            } else {
+                // if order was sell, decrease order by one unit
+                time--;
+                System.out.println("time: "+time);
+            }
+            System.out.println(" order was sucessful and completed ");
+        } else {
+            System.out.println(" order was unsuccessful ");
+        }
+	}
+  
 }

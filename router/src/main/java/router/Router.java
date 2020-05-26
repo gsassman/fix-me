@@ -10,17 +10,22 @@ public class Router
 	
      public static void main(String[] args) 
 	 {
-		Server broker= new Server(brokerPort, Component.Broker);
-		Server market = new Server(marketPort, Component.Market);
+		// new Servers to connect market and broker to router
+		Server brokerServer = new Server(brokerPort, Component.Broker);
+		Server marketServer = new Server(marketPort, Component.Market);
 		
-		broker.start();
-		market.start();
-		 
+		// start new threads for market and broker servers
+		// allows market and broker servers to receive messages concurrently
+		brokerServer.start();
+		marketServer.start();
+		
+		// while threads do not return interupted Thread exception, continually check for messages
 		while (true)
 		{
 			try
 			{
-				brokerMessages = broker.getMessages();
+				// get messages that broker client has sent to brokerServer
+				brokerMessages = brokerServer.getMessages();
 
 				if (brokerMessages.isEmpty())
 				{	
@@ -28,25 +33,28 @@ public class Router
 				}
 				else
 				{
+					// split broker message (broker request should be in fix format)
 					String[] arr = brokerMessages.split("\\|");
-					String id = String.format("56=%s", market.getComponentId());
-					
-					market.sendMessage(arr[0]+"|"+arr[1]+"|"+arr[2]+"|"+arr[3]+"|"+arr[4]+"|"+arr[5]+"|"+id+"|"+arr[7]+"|"+arr[8]+"|"+arr[9]+"|"+arr[10]+"|"+arr[11]+"|"+arr[12]+"|"+"|"+arr[13]+"|"+arr[14]+"|"+arr[15]+"|");
+					// get ID assigned to current market
+					String targetID =  marketServer.getComponentId();
+					// insert Market ID as Broker Request targetID
+					String brokerMessageTargeted = arr[0]+"|"+targetID+"|"+arr[2]+"|"+arr[3]+"|";
+
+					marketServer.sendMessage(brokerMessageTargeted);
 					
 					brokerMessages = "";
 				}
 
-				System.out.println("Processing order...");
-				
-				marketMessages = market.getMessages();
-				
+				marketMessages = marketServer.getMessages();
+
 				if (marketMessages.isEmpty())
 				{
-					broker.sendMessage(marketMessages);
+					brokerServer.sendMessage(marketMessages);
 				}
 				else
 				{
-					broker.sendMessage(marketMessages);
+
+					brokerServer.sendMessage(marketMessages);
 					marketMessages = "";
 					
 					System.out.println("Order processed");

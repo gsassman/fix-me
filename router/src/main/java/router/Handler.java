@@ -51,12 +51,15 @@ public class Handler extends Thread {
 	public void run() {
 		try {
 			while(this.runningClient){
+				if(Thread.currentThread().isAlive() == false) {
+					break;
+				}
 				if ((socket!= null) && (socket.isOpen()) && this.runningClient) {
 
 					ByteBuffer buffer = ByteBuffer.allocate(2048);
 					socket.read(buffer);
 					String cmsg =  new String(buffer.array()).trim();
-				System.out.println("Message from : "+componentType +" ID : "+ this.id +"  [ "+cmsg+"]");
+				System.out.println("Message from : "+componentType +" ID : "+ this.id +" "+cmsg);
 					
 					if (this.runningClient && !cmsg.isEmpty()) {
 						messages.add(cmsg);

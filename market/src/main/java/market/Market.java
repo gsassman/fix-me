@@ -3,179 +3,165 @@ http://www.java2s.com/Tutorials/Java/Java_Network/0070__Java_Network_Non-Blockin
 */
 package market;
 
-import java.io.*;
-import java.net.*;
-import java.nio.channels.*;
-import java.util.*;
-import java.nio.charset.*;
-import java.nio.*;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.SocketChannel;
+import java.util.Iterator;
 
 public class Market
 {
-    private static BufferedReader input = null;
+	private static ByteBuffer byteBuffer = null;
+
 	static String message = null;
-    public static final String[] instruments = {"A", "B", "c", "D", "E", "F"};
-	public static final int[] stock = {15, 25, 40, 45, 62, 78};
-    public static String ID ="";
-    public static  final String ipaddr = "127.0.0.1";
-    public static final int port = 5001;
 
-	public static void ShowInstruments()
-	{
-		System.out.println("Available instruments");
-		for(int i = 0; i < instruments.length; i++)
-		{
-			System.out.println("index"+ i + " : [ "+ instruments[i] + " ]");
-		}
-	}
+	public static int time = 100;
+	public static String ID = "";
 
-    public static Boolean processReadySet(Set readySet) throws Exception
-    {
-        SelectionKey key = null;
-        Iterator iterator = null;
-	
-        iterator = readySet.iterator();
+	public static final String host = "127.0.0.1";
+	public static final int port = 5001;
 
-        while (iterator.hasNext())
-        {
-            key = (SelectionKey) iterator.next();
-            iterator.remove();
-        }
+	public static void main(String[] args) throws Exception {
 
-        if (key.isConnectable())
-        {
-            Boolean connected = processConnect(key);
-            if (!connected)
-            {
-                return true;
+		// selects between channels
+		Selector selector = Selector.open();
+		// create new channel for this connection
+		SocketChannel socketChannel = SocketChannel.open();
+		// set channel to be non-blocking
+		socketChannel.configureBlocking(false);
+		// associate newly created channel to the server on the router
+		socketChannel.connect(new InetSocketAddress(host, port));
+		// register this channel with the selector and specify the operations this
+		// channel should be associated with
+		socketChannel.register(selector, SelectionKey.OP_CONNECT | SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+
+        // loop broker options until connection is closed
+        while (true) {
+            // get keys representing channels ready for IO
+            if (selector.select() > 0) {
+                // if a channel ready for IO exists, set iterator for keys
+                Iterator i = selector.selectedKeys().iterator();
+                // define selection key to hold selected key from selectedKeys
+                SelectionKey key = null;
+
+                // romove excess keys from list
+                while (i.hasNext()) {
+                    key = (SelectionKey) i.next();
+                    i.remove();
+                }
+
+                // process key, if connection failed/ended exit
+                if (processKey(key)) {
+                    break;
+                }
             }
         }
-
-        if (key.isReadable())
-        {
-            SocketChannel sc = (SocketChannel) key.channel();
-            ByteBuffer bb = ByteBuffer.allocate(1024);
-            
-            sc.read(bb);
-
-            String result = new String(bb.array()).trim();
-           
-			if(ID.isEmpty())
-			{
-				ID = result;
-				System.out.println("Assigned ID: [ " + ID + " ]");
-			}
-			else
-			{
-				System.out.println("Handling request");
-				handleRequest(key,result);
-			}
-        }
-        return false;
+        // once connection is closed, close this channel
+        socketChannel.close();
     }
+
+	// continually try to finish this channels connection
+    public static Boolean processConnection(SelectionKey key) {
+        // get channel associated with this key
+        SocketChannel socketChannel = (SocketChannel) key.channel();
+        try {
+            // try to finnish connection 
+            while (socketChannel.isConnectionPending()) {
+                socketChannel.finishConnect();
+            }
+        } catch (IOException e) {
+            // deregister this key from selector
+            key.cancel();
+            return false;
+        }
+        return true;
+    }
+
 	
-	public static String processOrder(String instrument, String fixmsg)
-	{
-		int item = 0;
-
-		for(int i = 0 ; i < instruments.length; i++)
-		{
-			if(instrument.equals(instruments[i]))
-		    {
-				item = i;
-				break;
+	public static Boolean processKey(SelectionKey key) throws Exception {
+		// if not connected already, finish connection
+		if (key.isConnectable()) {
+			// if connection failed/ended exit
+			if (!processConnection(key)) {
+				return true;
 			}
 		}
 
-		String[] msglist = fixmsg.split("\\|");
-		String amount = msglist[11].split("=")[1];
-		String buyOrSell = msglist[9].split("=")[1];
-		int item2 = 0;
-		item2 = Integer.parseInt(amount);
-		if(buyOrSell.equals("1"))
-	    {
-		    stock[item] = stock[item] - item2;
-			if(stock[item] > 0)
-			{
-				return "accepted";
-			}
-			else
-			{
-				return "rejected";
-			}
+		// once connected, test if this channel is ready for reading
+		if (key.isReadable()) {
+			// if key is readable, carry out operations
+			readableKey(key);
 		}
-		else
-		{
-		   stock[item] = stock[item] + item2;
-			
-			return "accepted";
-		}	
+		// return false to loop through next key set
+		return false;
 	}
-	
-	public static void handleRequest( SelectionKey key, String returnedStr)
+
+	public static void readableKey(SelectionKey key) throws IOException {
+		// get channel associated with this key
+		SocketChannel socketChannel = (SocketChannel) key.channel();
+		// initialise buffer to read from channel
+		byteBuffer = ByteBuffer.allocate(1024);
+
+		// very first message is the ID sent by router
+		socketChannel.read(byteBuffer);
+		String routerOutput = new String(byteBuffer.array()).trim();
+
+		// if ID is not set, then this is the first message received ie.:ID
+		if (ID.isEmpty()) {
+			ID = routerOutput;
+			System.out.println(" Market ID: " + routerOutput);
+			
+		} else {
+			// this is a message from the broker (request)
+			System.out.println(" Message from broker: " + routerOutput);
+			handleRequest(key, routerOutput);
+		}
+	}
+
+	public static void handleRequest(SelectionKey key, String brokerRequest)
 	{
-		try
-		{
-			String[] a = returnedStr.split("#");
-			System.out.println("Message received from Server: [ " + a[1] + " ]");
-			String processOrder = processOrder(a[0], a[1]);
-			String msg = processOrder + " " + a[1];
+		// get the channel associated with this key
+		SocketChannel socketChannel = (SocketChannel) key.channel();	
+		// split the brokerRequest string (currently in fix format)
+		String[] requestSplit = brokerRequest.split("\\|");
+		// get broker request (buy/sell)
+		String choice = requestSplit[2];
 
-			System.out.println("request Handled");
+		// pre-allocate brokerRequest status (if market is able/unable to fulfill request)
+		String requestStatus = "accepted";
+		// if brokerRequest was buy
+		if (choice.equals("1")) {
+		// check that market has sufficient quantity available to sell
+			if (time > 0) {
+				// if sufficient, decrement as unit has been sold. BrokerRequestStatus pre-allocated 'accepted'
+				time--;
+			} else {
+				// if market possesses insufficient quantity, change pre-allocated status to 'rejected'
+				requestStatus = "rejected";
+			}
+		// if brokerRequest was sell
+		} else {
+			// increment market quantity, brokerRequestStatus already pre-allocated 'accepted'
+			time++;
+		}
+		// append brokerRequestStatus to message for broker display
+		String marketReturn = requestStatus +"|"+ brokerRequest;
+		// wrap market response to a buffer for socket
+		byteBuffer = ByteBuffer.wrap(marketReturn.getBytes());
+		
+		try{
+			// write marketReturn to socket
+			socketChannel.write(byteBuffer);
+			System.out.println(" Message from market: " +marketReturn +"\n Completed");
+			System.out.println(" market time: " +time);
 
-			SocketChannel sc = (SocketChannel) key.channel();
-			ByteBuffer bb = ByteBuffer.wrap(msg.getBytes());
-
-			sc.write(bb);
-
-			System.out.println("request sent");
 		}
 		catch(IOException e)
 		{
 			 System.out.println("request failed");
 		}	
 	}
-	
-    public static Boolean processConnect(SelectionKey key) 
-    {
-        SocketChannel sc = (SocketChannel) key.channel();
-        try {
-            while (sc.isConnectionPending())
-            {
-                sc.finishConnect();
-            }
-        } catch (IOException e) {
-            key.cancel();
-            e.printStackTrace();
-            return false;
-        }
-        return true;
-    }
 
-    public static void main(String[] args) throws Exception 
-	{
-		
-        InetSocketAddress conn = new InetSocketAddress(ipaddr, port);
-        Selector selector = Selector.open();
-        SocketChannel sc = SocketChannel.open();
-        sc.configureBlocking(false); //set to non blocking
-        sc.connect(conn); //establish connectivity
-        sc.register(selector, SelectionKey.OP_CONNECT | SelectionKey.OP_READ | SelectionKey.OP_WRITE); // set allowed operations
-
-        input = new BufferedReader(new InputStreamReader(System.in));
-		
-        ShowInstruments();
-
-        while (true)
-        {
-            if (selector.select() > 0)
-            {	
-                Boolean Ready = processReadySet(selector.selectedKeys());
-                if (Ready) {
-                    break;
-                }
-            }
-        }
-        sc.close();
-    }
 }

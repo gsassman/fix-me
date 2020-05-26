@@ -28,7 +28,7 @@ public class Server extends Thread {
 	public SocketChannel socketChannel;
 	public Selector selector;
 	
-	public BufferedReader input;
+	public BufferedReader bufferedReader;
 	
 	private String _componentId;
 	
@@ -110,6 +110,7 @@ public class Server extends Thread {
 		return this.socketHandlerAsync.getMessages();
 	}
 
+	// return this server's ID
 	public String getComponentId()
 	{
 		return this._componentId;
